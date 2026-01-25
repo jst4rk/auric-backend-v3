@@ -9,6 +9,7 @@ import { TransactionsModule } from './modules/transactions/transactions.module';
 import { ExchangeModule } from './modules/exchange/exchange.module';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
+import { DashboardModule } from './modules/dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -33,7 +34,8 @@ import { APP_GUARD } from '@nestjs/core';
     }),
     UsersModule,
     TransactionsModule,
-    ExchangeModule
+    ExchangeModule,
+    DashboardModule
   ],
   controllers: [AppController],
   providers: [
