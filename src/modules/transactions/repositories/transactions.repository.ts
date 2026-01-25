@@ -2,7 +2,7 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 
 import * as R from 'ramda';
-import { ClientSession, DeleteResult, Model } from 'mongoose';
+import { AggregateOptions, ClientSession, DeleteResult, Model, PipelineStage } from 'mongoose';
 
 import { CreateTransactionDto } from '../dto/create-transaction.dto';
 import { Transaction } from '../entities/transaction.entity';
@@ -69,7 +69,7 @@ export class TransactionsRepository {
       }
 
       // ✅ 2) Only create the transaction AFTER balance update succeeds
-      const [created] = await this._txModel.create([{...createTransactionData, userId: toObjectId(createTransactionData.userId)}], { session });
+      const [created] = await this._txModel.create([{ ...createTransactionData, userId: toObjectId(createTransactionData.userId) }], { session });
 
       await session.commitTransaction();
 
@@ -95,18 +95,169 @@ export class TransactionsRepository {
     }
   }
 
-  async countDocuments(query: FilterTransactionsDto): Promise<number> {
+  async countDocuments(query: FilterTransactionsDto): Promise<any> {
     const filterQuery = cleanObject(buildQuery(query));
 
-    return this._txModel.countDocuments(filterQuery).lean();
+    const countPipeline: PipelineStage[] = [
+      { $match: filterQuery },
+      {
+        $addFields: {
+          groupKey: {
+            $cond: [
+              {
+                $and: [
+                  { $eq: ['$kind', 'exchange'] },
+                  { $ifNull: ['$exchangeGroupId', false] },
+                ],
+              },
+              '$exchangeGroupId',
+              '$_id',
+            ],
+          },
+        },
+      },
+      { $group: { _id: '$groupKey' } },
+      { $count: 'total' },
+    ];
+
+    const [count] = await this._txModel.aggregate<{ total: number }>(countPipeline).exec()
+
+    return count.total;
   }
 
   async findAll(query: FilterTransactionsDto): Promise<IResponse<Transaction[]>> {
     const filterQuery = cleanObject(buildQuery(query));
     const { limit, page, sort } = extractQueryParams(query);
 
+    const skip = page * limit;
+    const pipeline: any[] = [
+      { $match: filterQuery },
+
+      // groupKey: exchangeGroupId if kind=exchange and exchangeGroupId exists, else _id
+      {
+        $addFields: {
+          groupKey: {
+            $cond: [
+              {
+                $and: [
+                  { $eq: ['$kind', 'exchange'] },
+                  { $ifNull: ['$exchangeGroupId', false] },
+                ],
+              },
+              '$exchangeGroupId',
+              '$_id',
+            ],
+          },
+        },
+      },
+
+      // group into "UI rows"
+      {
+        $group: {
+          _id: '$groupKey',
+          docs: { $push: '$$ROOT' },
+
+          // these drive sorting + pagination at the "row" level
+          createdAt: { $max: '$createdAt' },
+        },
+      },
+
+      // sort grouped rows
+      { $sort: sort },
+
+      // pagination after grouping
+      { $skip: skip },
+      { $limit: limit },
+
+      // split legs + shape output
+      {
+        $addFields: {
+          expenseLeg: {
+            $first: {
+              $filter: {
+                input: '$docs',
+                as: 'd',
+                cond: { $eq: ['$$d.type', 'expense'] },
+              },
+            },
+          },
+          incomeLeg: {
+            $first: {
+              $filter: {
+                input: '$docs',
+                as: 'd',
+                cond: { $eq: ['$$d.type', 'income'] },
+              },
+            },
+          },
+          isExchange: {
+            $gt: [
+              {
+                $size: {
+                  $filter: {
+                    input: '$docs',
+                    as: 'd',
+                    cond: { $eq: ['$$d.kind', 'exchange'] },
+                  },
+                },
+              },
+              0,
+            ],
+          },
+        },
+      },
+
+      // return either merged exchange row OR the single normal doc
+      {
+        $project: {
+          createdAt: 1,
+          item: {
+            $cond: [
+              '$isExchange',
+              {
+                type: 'exchange',
+                kind: 'exchange',
+                category: 'exchange',
+                exchangeGroupId: '$_id',
+                createdAt: '$createdAt',
+
+                from: {
+                  _id: '$expenseLeg._id',
+                  currency: '$expenseLeg.currency',
+                  amount: '$expenseLeg.amount',
+                  description: '$expenseLeg.description',
+                },
+                to: {
+                  _id: '$incomeLeg._id',
+                  currency: '$incomeLeg.currency',
+                  amount: '$incomeLeg.amount',
+                  description: '$incomeLeg.description',
+                },
+
+                rate: {
+                  $cond: [
+                    {
+                      $and: [
+                        { $gt: ['$incomeLeg.amount', 0] },
+                        { $gt: ['$expenseLeg.amount', 0] },
+                      ],
+                    },
+                    { $divide: ['$incomeLeg.amount', '$expenseLeg.amount'] },
+                    null,
+                  ],
+                },
+              },
+              { $first: '$docs' },
+            ],
+          },
+        },
+      },
+
+      { $replaceRoot: { newRoot: '$item' } },
+    ];
+
     const [transactions, total] = await Promise.all([
-      this._txModel.find(filterQuery).limit(limit).skip(page * limit).sort({ ...sort }).lean(),
+      this._txModel.aggregate(pipeline).exec(),
       this.countDocuments(query)
     ]);
 
@@ -114,49 +265,6 @@ export class TransactionsRepository {
 
     return { data: transactions, meta };
   }
-
-  // findAll() {
-  //   const pipeline = [
-  //     { $match: { userId, ...filters } },
-
-  //     // group exchanges by exchangeGroupId, otherwise each tx groups by itself
-  //     {
-  //       $addFields: {
-  //         groupKey: { $ifNull: ['$exchangeGroupId', { $toString: '$_id' }] },
-  //         isExchange: { $cond: [{ $ifNull: ['$exchangeGroupId', false] }, true, false] },
-  //       },
-  //     },
-
-  //     {
-  //       $group: {
-  //         _id: '$groupKey',
-  //         isExchange: { $max: '$isExchange' },
-  //         date: { $max: '$date' }, // or $min — pick one and be consistent
-  //         createdAt: { $max: '$createdAt' },
-  //         items: { $push: '$$ROOT' },
-  //       },
-  //     },
-
-  //     { $sort: { date: -1, createdAt: -1 } },
-
-  //     // paginate groups, not documents
-  //     { $skip: skip },
-  //     { $limit: limit },
-
-  //     // shape the response
-  //     {
-  //       $project: {
-  //         _id: 0,
-  //         kind: { $cond: ['$isExchange', 'exchange', 'transaction'] },
-  //         exchangeGroupId: { $cond: ['$isExchange', '$_id', null] },
-  //         date: 1,
-  //         items: 1,
-  //       },
-  //     },
-  //   ];
-
-  //   return `This action returns all transactions`;
-  // }
 
   createMany(docs: Transaction[], session: ClientSession) {
     return this._txModel.insertMany(docs, { session, ordered: true });

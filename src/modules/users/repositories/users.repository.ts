@@ -75,6 +75,14 @@ export class UsersRepository {
     return user.toJSON();
   }
 
+  async findUserBalances(userId: string) {
+    const user = await this.userModel.findOne({ _id: userId }).lean();
+
+    if (!user) throw new NotFoundException('User not found');
+
+    return user.balances;
+  }
+
   async updateById(userId: string, updateData: UpdateUserDto) {
     await this.findById(userId);
 

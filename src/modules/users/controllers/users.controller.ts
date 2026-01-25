@@ -6,6 +6,7 @@ import { FilterUsersDto } from '../dto/filter-users.dto';
 import { UpdateUserDto } from '../dto/update-user.dto';
 import { User } from '../entities/user.entity';
 import { IResponse } from '../../common/interfaces/response.interface';
+import { ECurrency } from '../../common/enums';
 
 @Controller('users')
 export class UsersController {
@@ -24,5 +25,10 @@ export class UsersController {
   @Get(':id')
   async getUserById(@Param('id') id: string): Promise<User> {
     return await this._userService.findById(id);
+  }
+
+  @Get(':id/balances')
+  async getUserBalance(@Param('id') id: string): Promise<{ [ECurrency.USD]: number, [ECurrency.CUP]: number }> {
+    return await this._userService.findUserBalances(id);
   }
 }

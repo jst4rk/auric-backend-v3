@@ -39,6 +39,8 @@ export function extractQueryParams(query: Record<string, any>) {
     const order: number = sort.startsWith('-') ? -1 : 1;
     const field: string = sort.startsWith('-') ? sort.slice(1) : sort;
     sortField = { [field]: order };
+  } else {
+    sortField = { 'createdAt': -1 }
   }
 
   return {

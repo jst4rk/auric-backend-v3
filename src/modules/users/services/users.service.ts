@@ -45,6 +45,16 @@ export class UsersService {
     }
   }
 
+  async findUserBalances(userId: string) {
+    try {
+      const userBalances = this._usersRepository.findUserBalances(userId);
+  
+      return userBalances;
+    } catch (error) {
+      throw new HttpException(error.message, error.status || 500);
+    }
+  }
+
   async updateById(userId: string, updateData: UpdateUserDto) {
     try {
       return await this._usersRepository.updateById(userId, updateData);
