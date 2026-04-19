@@ -13,6 +13,7 @@
 #
 # GitHub repository Secrets (Settings → Secrets and variables → Actions → Secrets):
 #   SOPS_AGE_KEY — full contents of age.key (used to decrypt .env.enc)
+#   SOPS_AGE_KEY — full contents of age.key (used to decrypt .env.enc)
 #
 #   GCP auth — pick ONE:
 #
@@ -25,6 +26,8 @@
 #   GCP_SA_JSON — entire JSON key file contents for the deployer service account
 #
 # Runtime: All environment variables are decrypted from .env.enc during CI/CD and injected into Cloud Run using --set-env-vars.
+#
+# CI installs SOPS from the official GitHub release binary (not apt); version must stay in sync with sops_version in .env.enc.
 
 name: Deploy to Cloud Run
 
@@ -40,6 +43,8 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     environment: develop
+    env:
+      SOPS_VERSION: "3.12.2"
     permissions:
       contents: read
       id-token: write
@@ -48,11 +53,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 🔐 Install SOPS for decryption
+      # 🔐 Install SOPS for decryption (official release; apt package is unavailable on hosted runners)
       - name: Install SOPS
         run: |
-          sudo apt-get update
-          sudo apt-get install -y sops
+          set -euo pipefail
+          VERSION="${SOPS_VERSION}"
+          BASE="https://github.com/getsops/sops/releases/download/v${VERSION}"
+          ASSET="sops-v${VERSION}.linux.amd64"
+          curl -fsSL "${BASE}/${ASSET}" -o "${ASSET}"
+          curl -fsSL "${BASE}/sops-v${VERSION}.checksums.txt" -o checksums.txt
+          grep -F "${ASSET}" checksums.txt | sha256sum -c -
+          sudo install -m 0755 "${ASSET}" /usr/local/bin/sops
+          rm -f "${ASSET}" checksums.txt
 
       # 🔑 Setup SOPS age key from GitHub Secrets
       - name: Setup age key
@@ -101,6 +113,7 @@ jobs:
       - name: Deploy to Cloud Run
         run: |
           ENV_VARS=$(cat .env | grep -v '^#' | xargs)
+          ENV_VARS=$(cat .env | grep -v '^#' | xargs)
           gcloud run deploy ${{ vars.CLOUD_RUN_SERVICE }} \
             --image "${{ env.REGISTRY_HOST }}/${{ vars.GCP_PROJECT_ID }}/${{ vars.AR_REPOSITORY }}/${{ vars.IMAGE_NAME }}:${{ github.sha }}" \
             --region ${{ vars.GCP_REGION }} \
@@ -110,6 +123,7 @@ jobs:
             --memory=256Mi \
             --min-instances=0 \
             --max-instances=1 \
+            --set-env-vars $ENV_VARS \
             --set-env-vars $ENV_VARS \
             --allow-unauthenticated \
             --quiet
