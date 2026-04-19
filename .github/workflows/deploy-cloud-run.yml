@@ -13,6 +13,7 @@
 #
 # GitHub repository Secrets (Settings → Secrets and variables → Actions → Secrets):
 #   SOPS_AGE_KEY — full contents of age.key (used to decrypt .env.enc)
+#   SOPS_AGE_KEY — full contents of age.key (used to decrypt .env.enc)
 #
 #   GCP auth — pick ONE:
 #
@@ -112,6 +113,7 @@ jobs:
       - name: Deploy to Cloud Run
         run: |
           ENV_VARS=$(cat .env | grep -v '^#' | xargs)
+          ENV_VARS=$(cat .env | grep -v '^#' | xargs)
           gcloud run deploy ${{ vars.CLOUD_RUN_SERVICE }} \
             --image "${{ env.REGISTRY_HOST }}/${{ vars.GCP_PROJECT_ID }}/${{ vars.AR_REPOSITORY }}/${{ vars.IMAGE_NAME }}:${{ github.sha }}" \
             --region ${{ vars.GCP_REGION }} \
@@ -121,6 +123,7 @@ jobs:
             --memory=256Mi \
             --min-instances=0 \
             --max-instances=1 \
+            --set-env-vars $ENV_VARS \
             --set-env-vars $ENV_VARS \
             --allow-unauthenticated \
             --quiet
