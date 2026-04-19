@@ -1,0 +1,92 @@
+# Deploy auric-backend-v3 to Google Cloud Run
+#
+# Prerequisites (GCP): enable APIs (Cloud Run, Artifact Registry, IAM Credentials),
+# create an Artifact Registry Docker repository, and a deployer service account with
+# roles such as artifactregistry.writer, run.admin, and iam.serviceAccountUser as needed.
+#
+# GitHub repository Variables (Settings → Secrets and variables → Actions → Variables):
+#   GCP_PROJECT_ID     — Google Cloud project ID
+#   GCP_REGION         — e.g. us-central1 (must match Artifact Registry location)
+#   AR_REPOSITORY      — Artifact Registry repository name (Docker format)
+#   CLOUD_RUN_SERVICE  — Cloud Run service name
+#   IMAGE_NAME         — image name under that repository, e.g. auric-backend-v3
+#
+# GitHub repository Secrets — pick ONE authentication method:
+#
+# (A) Workload Identity Federation (recommended):
+#   GCP_WORKLOAD_IDENTITY_PROVIDER — full resource name, e.g.
+#     projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/POOL/providers/PROVIDER
+#   GCP_SERVICE_ACCOUNT — deployer SA email, e.g. github-deploy@PROJECT_ID.iam.gserviceaccount.com
+#
+# (B) Service account JSON key (replace the "Authenticate (WIF)" step below with the block in comments):
+#   GCP_SA_JSON — entire JSON key file contents for the deployer service account
+#
+# Runtime (configure on the Cloud Run service, not in this file):
+#   MONGO_URI — required by the app (see src/app.module.ts). Set via Cloud Run console,
+#   Secret Manager, or `gcloud run services update` after deploy.
+#
+# Optional: add `--allow-unauthenticated` to the gcloud run deploy step if the service should
+# be reachable without IAM (typical for a public HTTP API).
+
+name: Deploy to Cloud Run
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  REGISTRY_HOST: ${{ vars.GCP_REGION }}-docker.pkg.dev
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # --- Authentication: use ONE of the following approaches ---
+      #
+      # (A) Workload Identity Federation (active):
+      - name: Authenticate to Google Cloud (Workload Identity Federation)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      # (B) Service account JSON key — remove step (A) and uncomment:
+      # - name: Authenticate to Google Cloud (service account key)
+      #   uses: google-github-actions/auth@v2
+      #   with:
+      #     credentials_json: ${{ secrets.GCP_SA_JSON }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker "$REGISTRY_HOST" --quiet
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY_HOST }}/${{ vars.GCP_PROJECT_ID }}/${{ vars.AR_REPOSITORY }}/${{ vars.IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.REGISTRY_HOST }}/${{ vars.GCP_PROJECT_ID }}/${{ vars.AR_REPOSITORY }}/${{ vars.IMAGE_NAME }}:latest
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy ${{ vars.CLOUD_RUN_SERVICE }} \
+            --image "${{ env.REGISTRY_HOST }}/${{ vars.GCP_PROJECT_ID }}/${{ vars.AR_REPOSITORY }}/${{ vars.IMAGE_NAME }}:${{ github.sha }}" \
+            --region ${{ vars.GCP_REGION }} \
+            --project ${{ vars.GCP_PROJECT_ID }} \
+            --platform managed \
+            --quiet
