@@ -11,7 +11,10 @@
 #   CLOUD_RUN_SERVICE  — Cloud Run service name
 #   IMAGE_NAME         — image name under that repository, e.g. auric-backend-v3
 #
-# GitHub repository Secrets — pick ONE authentication method:
+# GitHub repository Secrets (Settings → Secrets and variables → Actions → Secrets):
+#   MONGO_URI — MongoDB connection string (required for deploy; matches app env name).
+#
+#   GCP auth — pick ONE:
 #
 # (A) Workload Identity Federation (recommended):
 #   GCP_WORKLOAD_IDENTITY_PROVIDER — full resource name, e.g.
@@ -21,12 +24,9 @@
 # (B) Service account JSON key (replace the "Authenticate (WIF)" step below with the block in comments):
 #   GCP_SA_JSON — entire JSON key file contents for the deployer service account
 #
-# Runtime (configure on the Cloud Run service, not in this file):
-#   MONGO_URI — required by the app (see src/app.module.ts). Set via Cloud Run console,
-#   Secret Manager, or `gcloud run services update` after deploy.
-#
-# Optional: add `--allow-unauthenticated` to the gcloud run deploy step if the service should
-# be reachable without IAM (typical for a public HTTP API).
+# Runtime: MONGO_URI is set on Cloud Run from the GitHub Actions secret on each deploy
+# (--set-env-vars). Values are masked in workflow logs; for tighter control use GCP Secret Manager
+# and --set-secrets instead. The app reads MONGO_URI in src/app.module.ts.
 
 name: Deploy to Cloud Run
 
@@ -83,10 +83,14 @@ jobs:
             ${{ env.REGISTRY_HOST }}/${{ vars.GCP_PROJECT_ID }}/${{ vars.AR_REPOSITORY }}/${{ vars.IMAGE_NAME }}:latest
 
       - name: Deploy to Cloud Run
+        env:
+          MONGO_URI: ${{ secrets.MONGO_URI }}
         run: |
           gcloud run deploy ${{ vars.CLOUD_RUN_SERVICE }} \
             --image "${{ env.REGISTRY_HOST }}/${{ vars.GCP_PROJECT_ID }}/${{ vars.AR_REPOSITORY }}/${{ vars.IMAGE_NAME }}:${{ github.sha }}" \
             --region ${{ vars.GCP_REGION }} \
             --project ${{ vars.GCP_PROJECT_ID }} \
             --platform managed \
+            --set-env-vars="MONGO_URI=${MONGO_URI}" \
+            --allow-unauthenticated \
             --quiet
