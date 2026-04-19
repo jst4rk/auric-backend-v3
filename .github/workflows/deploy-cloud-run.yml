@@ -12,7 +12,7 @@
 #   IMAGE_NAME         — image name under that repository, e.g. auric-backend-v3
 #
 # GitHub repository Secrets (Settings → Secrets and variables → Actions → Secrets):
-#   MONGO_URI — MongoDB connection string (required for deploy; matches app env name).
+#   SOPS_AGE_KEY — full contents of age.key (used to decrypt .env.enc)
 #
 #   GCP auth — pick ONE:
 #
@@ -24,9 +24,7 @@
 # (B) Service account JSON key (replace the "Authenticate (WIF)" step below with the block in comments):
 #   GCP_SA_JSON — entire JSON key file contents for the deployer service account
 #
-# Runtime: MONGO_URI is set on Cloud Run from the GitHub Actions secret on each deploy
-# (--set-env-vars). Values are masked in workflow logs; for tighter control use GCP Secret Manager
-# and --set-secrets instead. The app reads MONGO_URI in src/app.module.ts.
+# Runtime: All environment variables are decrypted from .env.enc during CI/CD and injected into Cloud Run using --set-env-vars.
 
 name: Deploy to Cloud Run
 
@@ -49,6 +47,23 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      # 🔐 Install SOPS for decryption
+      - name: Install SOPS
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y sops
+
+      # 🔑 Setup SOPS age key from GitHub Secrets
+      - name: Setup age key
+        run: |
+          mkdir -p ~/.config/sops/age
+          echo "${{ secrets.SOPS_AGE_KEY }}" > ~/.config/sops/age/keys.txt
+        
+      # 🔓 Decrypt .env.enc → .env
+      - name: Decrypt environment file
+        run: | 
+          sops -d .env.enc > .env
 
       # --- Authentication: use ONE of the following approaches ---
       #
@@ -84,9 +99,8 @@ jobs:
             ${{ env.REGISTRY_HOST }}/${{ vars.GCP_PROJECT_ID }}/${{ vars.AR_REPOSITORY }}/${{ vars.IMAGE_NAME }}:latest
 
       - name: Deploy to Cloud Run
-        env:
-          MONGO_URI: ${{ secrets.MONGO_URI }}
         run: |
+          ENV_VARS=$(cat .env | grep -v '^#' | xargs)
           gcloud run deploy ${{ vars.CLOUD_RUN_SERVICE }} \
             --image "${{ env.REGISTRY_HOST }}/${{ vars.GCP_PROJECT_ID }}/${{ vars.AR_REPOSITORY }}/${{ vars.IMAGE_NAME }}:${{ github.sha }}" \
             --region ${{ vars.GCP_REGION }} \
@@ -96,6 +110,6 @@ jobs:
             --memory=256Mi \
             --min-instances=0 \
             --max-instances=1 \
-            --set-env-vars="MONGO_URI=${MONGO_URI}" \
+            --set-env-vars $ENV_VARS \
             --allow-unauthenticated \
             --quiet
