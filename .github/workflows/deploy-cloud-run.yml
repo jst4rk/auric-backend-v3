@@ -92,6 +92,8 @@ jobs:
             --region ${{ vars.GCP_REGION }} \
             --project ${{ vars.GCP_PROJECT_ID }} \
             --platform managed \
+            --min-instances=0 \
+            --max-instances=1 \
             --set-env-vars="MONGO_URI=${MONGO_URI}" \
             --allow-unauthenticated \
             --quiet
