@@ -55,6 +55,13 @@ jobs:
         run: npx dotenvx decrypt -f .env.encrypted > .env
         env:
           DOTENV_PRIVATE_KEY: ${{ secrets.DOTENV_PRIVATE_KEY }}
+
+      - name: Debug .env content
+        run: |
+          echo "---- .env content ----"
+          cat .env
+          echo "----------------------"
+
       # --- Authentication: use ONE of the following approaches ---
       #
       # (A) Workload Identity Federation (active):
