@@ -11,10 +11,6 @@
 #   CLOUD_RUN_SERVICE  — Cloud Run service name
 #   IMAGE_NAME         — image name under that repository, e.g. auric-backend-v3
 #
-# GitHub repository Secrets (Settings → Secrets and variables → Actions → Secrets):
-#   SOPS_AGE_KEY — full contents of age.key (used to decrypt .env.enc)
-#   SOPS_AGE_KEY — full contents of age.key (used to decrypt .env.enc)
-#
 #   GCP auth — pick ONE:
 #
 # (A) Workload Identity Federation (recommended):
@@ -29,7 +25,6 @@
 #
 # CI installs SOPS from the official GitHub release binary (not apt); version must stay in sync with sops_version in .env.enc.
 #
-# CI installs SOPS from the official GitHub release binary (not apt); version must stay in sync with sops_version in .env.enc.
 
 name: Deploy to Cloud Run
 
@@ -51,7 +46,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@
+        uses: actions/checkout@v4
         
       - name: Decrypting .env files
         env:
