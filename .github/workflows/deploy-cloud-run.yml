@@ -13,6 +13,7 @@
 #
 # GitHub repository Secrets (Settings → Secrets and variables → Actions → Secrets):
 #   SOPS_AGE_KEY — full contents of age.key (used to decrypt .env.enc)
+#   SOPS_AGE_KEY — full contents of age.key (used to decrypt .env.enc)
 #
 #   GCP auth — pick ONE:
 #
@@ -25,6 +26,8 @@
 #   GCP_SA_JSON — entire JSON key file contents for the deployer service account
 #
 # Runtime: All environment variables are decrypted from .env.enc during CI/CD and injected into Cloud Run using --set-env-vars.
+#
+# CI installs SOPS from the official GitHub release binary (not apt); version must stay in sync with sops_version in .env.enc.
 #
 # CI installs SOPS from the official GitHub release binary (not apt); version must stay in sync with sops_version in .env.enc.
 
@@ -42,6 +45,8 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     environment: develop
+    env:
+      SOPS_VERSION: "3.12.2"
     env:
       SOPS_VERSION: "3.12.2"
     permissions:
