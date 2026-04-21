@@ -82,7 +82,7 @@ jobs:
         run: |
           dotenvx run -f .env.encrypted -- bash -c '
             # Export ONLY dotenvx-injected vars (safe filtering)
-            ENV_VARS=$(env | grep -v "^_" | grep -v "GITHUB_" | grep -v "PORT" | grep -v "PATH=" | tr "\n" ",")
+            ENV_VARS=$(env | grep -v "^_" | grep -v "GITHUB_" | grep -v "PATH=" | tr "\n" ",")
 
             gcloud run deploy ${{ vars.CLOUD_RUN_SERVICE }} \
               --image "${{ env.REGISTRY_HOST }}/${{ vars.GCP_PROJECT_ID }}/${{ vars.AR_REPOSITORY }}/${{ vars.IMAGE_NAME }}:${{ github.sha }}" \
