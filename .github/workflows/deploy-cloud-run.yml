@@ -54,7 +54,8 @@ jobs:
         uses: actions/checkout@
         
       - name: Decrypting .env files
-        env: DOTENV_PRIVATE_KEY: ${{ secrets.DOTENV_PRIVATE_KEY }}
+        env:
+          DOTENV_PRIVATE_KEY: ${{ secrets.DOTENV_PRIVATE_KEY }}
         run: npx dotenvx decrypt -f .env.encrypted
       # --- Authentication: use ONE of the following approaches ---
       #
