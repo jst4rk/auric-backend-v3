@@ -52,7 +52,7 @@ jobs:
         run: curl -sfS https://dotenvx.sh/install.sh | sh
 
       - name: Decrypting .env files
-        run: npx dotenvx decrypt -f .env.encrypted
+        run: npx dotenvx decrypt -f .env.encrypted > .env
         env:
           DOTENV_PRIVATE_KEY: ${{ secrets.DOTENV_PRIVATE_KEY }}
       # --- Authentication: use ONE of the following approaches ---
