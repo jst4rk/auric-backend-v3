@@ -20,7 +20,7 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: async (configService: ConfigService) => ({
-        uri: configService.get<string>('MONGO_URI'),
+        uri: configService.get<string>('APP_MONGO_URI'),
       }),
     }),
     ThrottlerModule.forRoot({
