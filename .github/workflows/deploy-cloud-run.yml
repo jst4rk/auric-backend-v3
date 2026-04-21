@@ -51,31 +51,12 @@ jobs:
       - name: Install Dotenvx
         run: curl -sfS https://dotenvx.sh/install.sh | sh
 
-      - name: Decrypting .env files
-        run: npx dotenvx decrypt -f .env.encrypted > .env
-        env:
-          DOTENV_PRIVATE_KEY: ${{ secrets.DOTENV_PRIVATE_KEY }}
-
-      - name: Debug .env content
-        run: |
-          echo "---- .env content ----"
-          cat .env
-          echo "----------------------"
-
-      # --- Authentication: use ONE of the following approaches ---
-      #
-      # (A) Workload Identity Federation (active):
+      # --- Authentication ---
       - name: Authenticate to Google Cloud (Workload Identity Federation)
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
-
-      # (B) Service account JSON key — remove step (A) and uncomment:
-      # - name: Authenticate to Google Cloud (service account key)
-      #   uses: google-github-actions/auth@v2
-      #   with:
-      #     credentials_json: ${{ secrets.GCP_SA_JSON }}
 
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
@@ -96,16 +77,23 @@ jobs:
             ${{ env.REGISTRY_HOST }}/${{ vars.GCP_PROJECT_ID }}/${{ vars.AR_REPOSITORY }}/${{ vars.IMAGE_NAME }}:latest
 
       - name: Deploy to Cloud Run
+        env:
+          DOTENV_PRIVATE_KEY: ${{ secrets.DOTENV_PRIVATE_KEY }}
         run: |
-          gcloud run deploy ${{ vars.CLOUD_RUN_SERVICE }} \
-            --image "${{ env.REGISTRY_HOST }}/${{ vars.GCP_PROJECT_ID }}/${{ vars.AR_REPOSITORY }}/${{ vars.IMAGE_NAME }}:${{ github.sha }}" \
-            --region ${{ vars.GCP_REGION }} \
-            --project ${{ vars.GCP_PROJECT_ID }} \
-            --platform managed \
-            --cpu=1 \
-            --memory=256Mi \
-            --min-instances=0 \
-            --max-instances=1 \
-            --env-vars-file .env \
-            --allow-unauthenticated \
-            --quiet
+          dotenvx run -- bash -c '
+            # Export ONLY dotenvx-injected vars (safe filtering)
+            ENV_VARS=$(env | grep -v "^_" | grep -v "GITHUB_" | grep -v "PATH=" | tr "\n" ",")
+
+            gcloud run deploy ${{ vars.CLOUD_RUN_SERVICE }} \
+              --image "${{ env.REGISTRY_HOST }}/${{ vars.GCP_PROJECT_ID }}/${{ vars.AR_REPOSITORY }}/${{ vars.IMAGE_NAME }}:${{ github.sha }}" \
+              --region ${{ vars.GCP_REGION }} \
+              --project ${{ vars.GCP_PROJECT_ID }} \
+              --platform managed \
+              --cpu=1 \
+              --memory=256Mi \
+              --min-instances=0 \
+              --max-instances=1 \
+              --set-env-vars "$ENV_VARS" \
+              --allow-unauthenticated \
+              --quiet
+          '
